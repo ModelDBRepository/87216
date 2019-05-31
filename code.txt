@@ -1,0 +1,98 @@
+#pragma rtGlobals=1		// Use modern global access method.
+
+// Function for running the simulation.  
+Function GerkinSimulate(ctrlName)
+	String ctrlName
+	
+	// Access all the global variables (the simulation parameters)
+	SetDataFolder root:Parameters
+	NVar duration // in milliseconds.
+	NVar frequency // stimulus frequency in Hz.
+	NVar pulse_width // width of the pulse (AB or BA) in milliseconds.
+	NVar ab_on,ba_on
+	NVar timing // The timing in between doublets, ba - ab, in milliseconds.
+	NVar dt // Simulation time-scale, in milliseconds.  
+	NVar p_off,d_off,v_off,lambda,p_steep,d_steep,w_off,NR2A,NR2B
+	
+	// Initialize the waves that track the evolution of the dynamics variables.  
+	SetDataFolder root:
+	Variable time_steps=duration/dt
+	Make /o /n=(time_steps) AB_=0,BA_=0,P_=0,D_=0,V_=0,W_=0
+	SetScale /P x,0,dt,AB_,BA_,P_,D_,V_,W_
+	Variable t // Tracks time in milliseconds.
+	
+	// Set stimulus waves AB and BA according to the parameters.
+	Variable thyme=1000/(2*frequency)
+	Variable point_timing=round(timing/dt)
+	Variable point_width=round(pulse_width/dt)
+	for(t=0;t<time_steps;t+=1)
+		thyme+=dt
+		if(thyme>1000/frequency)
+			AB_[t,t+point_width-1]=ab_on ? 1 : 0
+			BA_[t+point_timing,t+point_timing+point_width-1]=ba_on ? 1 : 0
+			thyme=0
+		endif
+	endfor
+	
+	// Run simulation.  
+	for(t=1;t<time_steps;t+=1)
+		P_[t]=P_[t-1]+dt*     (AB_[t] - p_off*P_[t-1])*NR2A
+		D_[t]=D_[t-1]+dt*     (BA_[t] + AB_[t] - d_off*(D_[t-1] + lambda*V_[t-1]*D_[t-1]))*NR2B
+		V_[t]=V_[t-1]+dt*      (AB_[t] - v_off*V_[t-1])*NR2B
+		W_[t]=W_[t-1]+dt*   (1/(1+exp((1-P_[t-1])/p_steep)) - 1/(1+exp((1-D_[t-1])/d_steep)) - w_off*W_[t-1])
+	endfor
+	
+	// Show results if they are not already displayed.  
+	if(!strlen(WinList("Results",";","")))
+		Display /K=1 /N=Results W_
+		DoWindow /T Results,"Results"
+		Label left "Plasticity Readout"
+		Label bottom "Time (s)"
+		ModifyGraph prescaleExp(bottom)=-3
+	endif
+End
+
+// Function to generate the simulation controller panel.  
+Function GerkinController()
+	NewPanel /K=1 /N=$"Simulation_Controller" /W=(100,100,320,600)
+	GerkinInitialize("")
+	Variable i
+	SetDataFolder root:Parameters
+	String vars=VariableList("*",";",4) // All the variables in the current folder.  
+	SetDataFolder root:
+	String var_name
+	
+	// Loop to add all the variables listed in 'vars' to the controller panel.  
+	for(i=0;i<ItemsInList(vars);i+=1)
+		var_name=StringFromList(i,vars)
+		NVar var=root:Parameters:$var_name
+		SetVariable $var_name size={100,25},variable=var
+	endfor
+	
+	Button Go,proc=GerkinSimulate,title="Go"
+	Button Reset,proc=GerkinInitialize,title="Reset"
+End
+
+// Initialize all the parameters.  
+Function GerkinInitialize(ctrlName)
+	String ctrlName
+	NewDataFolder /O/S root:Parameters
+	Variable /G duration=5000 // in milliseconds.
+	Variable /G frequency=1 // in Hz.
+	Variable /G pulse_width=5 // in milliseconds.
+	Variable /G ab_on=1
+	Variable /G ba_on=1
+	Variable /G timing=10 // ba - ab, in milliseconds.
+	Variable /G dt=0.01 // Simulation time-scale, in milliseconds.  
+	Variable /G p_off=1/30
+	Variable /G d_off=1/30
+	Variable /G v_off=1
+	Variable /G lambda=1000
+	Variable /G p_steep=1/5
+	Variable /G d_steep=1/5
+	Variable /G w_off=1/3000
+	Variable /G nr2a=1
+	Variable /G nr2b=1
+	SetDataFolder root:
+End
+
